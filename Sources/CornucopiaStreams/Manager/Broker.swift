@@ -18,7 +18,10 @@ public extension Cornucopia.Streams {
         }
 
         /// Attempt a connection to the specified `url`. Returns a pair of streams, if successful.
-        public func connect(to url: URL) async throws -> StreamPair {
+        /// - Parameters:
+        ///   - url: The URL to connect to
+        ///   - timeout: Connection timeout in seconds. Use 0.0 (default) for no timeout (try forever).
+        public func connect(to url: URL, timeout: TimeInterval = 0.0) async throws -> StreamPair {
 
             guard !self.pending.keys.contains(url) else { throw Error.connectionInProgress }
             guard let scheme = url.scheme else { throw Error.invalidUrl }
@@ -49,7 +52,7 @@ public extension Cornucopia.Streams {
                 self.pending[url] = nil
             }
             return try await withTaskCancellationHandler(operation: {
-                try await connector.connect()
+                try await connector.connect(timeout: timeout)
             }, onCancel: {
                 connector.cancel()
             })

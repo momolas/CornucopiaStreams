@@ -9,8 +9,9 @@ extension Cornucopia.Streams {
     /// A connector for (pseudo)-TTYs and (USB) serial ports.
     final class TTYConnector: BaseConnector {
 
-        override func connect() async throws -> Cornucopia.Streams.StreamPair {
+        override func connect(timeout: TimeInterval) async throws -> Cornucopia.Streams.StreamPair {
 
+            // Note: TTY/serial device opening is typically instantaneous, so timeout is not used here
             let url = self.meta.url
             guard !url.path.isEmpty, FileManager.default.fileExists(atPath: url.path) else { throw Error.invalidUrl }
             guard let inputStream = TTYInputStreamProxy(forReadingAtPath: url.path, bitrate: url.port) else { throw Error.unableToConnect("Can't open \(url.path) for reading") }

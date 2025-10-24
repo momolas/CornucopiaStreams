@@ -31,7 +31,7 @@ void csocket_set_block(int socket, int on)
     }
 }
 
-int csocket_connect(const char *host, int port, int timeout)
+int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatile sig_atomic_t *cancelFlag)
 {
     struct sockaddr_in sa;
     struct hostent *hp;
@@ -47,37 +47,74 @@ int csocket_connect(const char *host, int port, int timeout)
     sa.sin_port = htons(port);
     sockfd = socket(hp->h_addrtype, SOCK_STREAM, 0);
     csocket_set_block(sockfd,0);
-    connect(sockfd, (struct sockaddr *)&sa, sizeof(sa));
-    fd_set fdwrite;
-    struct timeval  tvSelect;
-    FD_ZERO(&fdwrite);
-    FD_SET(sockfd, &fdwrite);
-    tvSelect.tv_sec = timeout;
-    tvSelect.tv_usec = 0;
-
-    int retval = select(sockfd + 1, NULL, &fdwrite, NULL, &tvSelect);
-    if (retval < 0)
+    int connectResult = connect(sockfd, (struct sockaddr *)&sa, sizeof(sa));
+    if (connectResult == 0)
     {
-        close(sockfd);
-        return -2;
-    }
-    else if (retval == 0)
-    {
-        close(sockfd);
-        return -3;
-    }
-    else
-    {
-        int error = 0;
-        int errlen = sizeof(error);
-        getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, (socklen_t *)&errlen);
-        if (error != 0)
-        {
-            close(sockfd);
-            return -4;
-        }
+        csocket_set_block(sockfd,1);
         signal(SIGPIPE, SIG_IGN);
         return sockfd;
+    }
+
+    int remaining = timeoutMilliseconds;
+    int infiniteTimeout = timeoutMilliseconds <= 0;
+
+    fd_set fdwrite;
+    struct timeval tvSelect;
+    while (1)
+    {
+        if (cancelFlag && *cancelFlag != 0)
+        {
+            close(sockfd);
+            errno = ECANCELED;
+            return -5;
+        }
+
+        int waitDuration = 100;
+        if (!infiniteTimeout && remaining > 0 && remaining < waitDuration) { waitDuration = remaining; }
+
+        FD_ZERO(&fdwrite);
+        FD_SET(sockfd, &fdwrite);
+        tvSelect.tv_sec = waitDuration / 1000;
+        tvSelect.tv_usec = (waitDuration % 1000) * 1000;
+
+        int retval = select(sockfd + 1, NULL, &fdwrite, NULL, &tvSelect);
+        if (retval < 0)
+        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
+            close(sockfd);
+            return -2;
+        }
+        else if (retval == 0)
+        {
+            if (infiniteTimeout)
+            {
+                continue;
+            }
+            remaining -= waitDuration;
+            if (remaining <= 0)
+            {
+                close(sockfd);
+                return -3;
+            }
+            continue;
+        }
+        else
+        {
+            int error = 0;
+            int errlen = sizeof(error);
+            getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &error, (socklen_t *)&errlen);
+            if (error != 0)
+            {
+                close(sockfd);
+                return -4;
+            }
+            csocket_set_block(sockfd,1);
+            signal(SIGPIPE, SIG_IGN);
+            return sockfd;
+        }
     }
 }
 
@@ -92,4 +129,3 @@ int csocket_close(int socketfd)
 {
     return close(socketfd);
 }
-

@@ -29,8 +29,11 @@ public extension Cornucopia {
 
         /// Connect to the specified ``URL``.
         /// Task will suspend until the connection is established, fails, or the task is cancelled.
-        public static func connect(url: URL) async throws -> StreamPair {
-            try await Cornucopia.Streams.Broker.shared.connect(to: url)
+        /// - Parameters:
+        ///   - url: The URL to connect to
+        ///   - timeout: Connection timeout in seconds. Use 0.0 for no timeout (try forever). Default is 0.0.
+        public static func connect(url: URL, timeout: TimeInterval = 0.0) async throws -> StreamPair {
+            try await Cornucopia.Streams.Broker.shared.connect(to: url, timeout: timeout)
         }
     }
 }

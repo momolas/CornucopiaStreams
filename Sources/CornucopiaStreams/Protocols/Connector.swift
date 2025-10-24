@@ -11,7 +11,8 @@ extension Cornucopia.Streams {
         /// Creates a connector for connecting to the specified ``URL``.
         init(url: URL)
         /// Connects and returns a stream pair.
-        func connect() async throws -> Cornucopia.Streams.StreamPair
+        /// - Parameter timeout: Connection timeout in seconds. Use 0.0 for no timeout (try forever).
+        func connect(timeout: TimeInterval) async throws -> Cornucopia.Streams.StreamPair
         /// Cancels this connection, if possible.
         func cancel()
     }

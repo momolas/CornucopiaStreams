@@ -29,8 +29,9 @@ extension Cornucopia.Streams {
         var peripherals: [UUID: CBPeripheral] = [:]
         var peripheral: CBPeripheral? = nil
 
-        override func connect() async throws -> Cornucopia.Streams.StreamPair {
+        override func connect(timeout: TimeInterval) async throws -> Cornucopia.Streams.StreamPair {
 
+            // Note: BLE connection logic handles its own timeouts internally
             let url = self.meta.url
             guard let serviceUUID = url.host?.uppercased() else { throw Error.invalidUrl }
             if url.path.count == Self.numberOfCharactersForPeerUUID + 1 {

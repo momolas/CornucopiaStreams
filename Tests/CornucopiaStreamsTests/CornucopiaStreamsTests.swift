@@ -1,11 +1,133 @@
+import Foundation
 import XCTest
 @testable import CornucopiaStreams
 
-final class CornucopiaStreamsTests: XCTestCase {
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct
-        // results.
-        XCTAssertEqual(true, true)
+final class ConnectorCancellationTests: XCTestCase {
+
+    func testTCPConnectorCancellation() async throws {
+        let url = try XCTUnwrap(URL(string: "tcp://192.0.2.1:65000"))
+        await expectCancellation(
+            for: url,
+            connectorName: "TCPConnector",
+            warmupNanoseconds: 4_000_000_000,
+            timeoutNanoseconds: 5_000_000_000
+        )
+    }
+
+    #if canImport(ExternalAccessory)
+    func testEAConnectorCancellation() async throws {
+        let url = try XCTUnwrap(URL(string: "ea://com.example.protocol"))
+        await expectCancellation(for: url, connectorName: "EAConnector")
+    }
+    #endif
+
+    #if canImport(CoreBluetooth)
+    @MainActor
+    func testBLEConnectorCancellation() async throws {
+        let url = try XCTUnwrap(URL(string: "ble://DEAD"))
+        await expectCancellation(for: url, connectorName: "BLEConnector", warmupNanoseconds: 200_000_000, timeoutNanoseconds: 2_000_000_000)
+    }
+    #endif
+
+    #if canImport(IOBluetooth) && !targetEnvironment(macCatalyst)
+    func testRFCOMMConnectorCancellation() async throws {
+        let url = try XCTUnwrap(URL(string: "rfcomm://00-11-22-33-44-55:1"))
+        await expectCancellation(for: url, connectorName: "RFCOMMConnector")
+    }
+    #endif
+
+    func testTTYConnectorCancellation() async throws {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent("cornucopia-streams-tty-\(UUID().uuidString)")
+        FileManager.default.createFile(atPath: path.path, contents: Data())
+        defer { try? FileManager.default.removeItem(at: path) }
+
+        let urlString = "tty://\(path.path)"
+        let url = try XCTUnwrap(URL(string: urlString))
+        await expectCancellation(for: url, connectorName: "TTYConnector")
+    }
+}
+
+// MARK: - Cancellation Test Helpers
+
+private enum CancellationObservationResult {
+    case completedSuccessfully
+    case failed(Error)
+}
+
+private struct CancellationTimeoutError: Error {}
+
+private func expectCancellation(
+    for url: URL,
+    connectorName: String,
+    warmupNanoseconds: UInt64 = 50_000_000,
+    timeoutNanoseconds: UInt64 = 200_000_000,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+
+    let broker = Cornucopia.Streams.Broker.shared
+    let task = Task {
+        try await broker.connect(to: url)
+    }
+    defer { task.cancel() }
+
+    await Task.yield()
+    if warmupNanoseconds > 0 {
+        try? await Task.sleep(nanoseconds: warmupNanoseconds)
+    }
+
+    task.cancel()
+
+    let observation = await observeCancellation(of: task, timeoutNanoseconds: timeoutNanoseconds)
+
+    switch observation {
+        case .completedSuccessfully:
+            XCTFail("\(connectorName) connection unexpectedly succeeded (cancellation had no effect)", file: file, line: line)
+
+        case .failed(let error):
+            if let streamsError = error as? Cornucopia.Streams.Error {
+                if case .connectionCancelled = streamsError {
+                    // Expected outcome; the connector reported proper cancellation.
+                } else {
+                    XCTFail("\(connectorName) should report connectionCancelled when cancelled (received \(streamsError))", file: file, line: line)
+                }
+            } else if error is CancellationError {
+                // Accept the generic cancellation error that Swift can throw for cooperative tasks.
+            } else if error is CancellationTimeoutError {
+                XCTFail("\(connectorName) did not finish after cancellation request", file: file, line: line)
+            } else {
+                XCTFail("\(connectorName) threw unexpected error \(error)", file: file, line: line)
+            }
+    }
+}
+
+private func observeCancellation<Success>(
+    of task: Task<Success, Error>,
+    timeoutNanoseconds: UInt64
+) async -> CancellationObservationResult {
+
+    await withTaskCancellationHandler {
+        await withTaskGroup(of: CancellationObservationResult.self, returning: CancellationObservationResult.self) { group in
+            group.addTask {
+                do {
+                    _ = try await task.value
+                    return .completedSuccessfully
+                } catch {
+                    return .failed(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return .failed(CancellationTimeoutError())
+            }
+            guard let first = await group.next() else {
+                return .failed(CancellationTimeoutError())
+            }
+            group.cancelAll()
+            return first
+        }
+    } onCancel: {
+        task.cancel()
     }
 }

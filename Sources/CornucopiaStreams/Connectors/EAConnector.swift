@@ -21,8 +21,9 @@ extension Cornucopia.Streams {
         var proto: String?
 
         /// Connect
-        override func connect() async throws -> StreamPair {
+        override func connect(timeout: TimeInterval) async throws -> StreamPair {
 
+            // Note: ExternalAccessory connection logic handles its own timeouts internally
             let url = self.meta.url
             guard let proto = url.host else { throw Error.invalidUrl }
             if let connectedAccessory = try EAAccessoryManager.shared().CC_connectedAccessoryForProtocol(proto) {

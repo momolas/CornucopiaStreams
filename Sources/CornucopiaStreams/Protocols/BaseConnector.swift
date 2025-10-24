@@ -17,7 +17,7 @@ extension Cornucopia.Streams {
             self.meta = .init(url: url)
         }
 
-        func connect() async throws -> Cornucopia.Streams.StreamPair { fatalError("implement this in your concrete subclass") }
+        func connect(timeout: TimeInterval) async throws -> Cornucopia.Streams.StreamPair { fatalError("implement this in your concrete subclass") }
         func cancel() {
             logger.debug("Cancel is NOT implemented in concrete subclass")
         }
@@ -30,7 +30,7 @@ extension Cornucopia.Streams {
             self.meta = .init(url: url)
         }
 
-        func connect() async throws -> Cornucopia.Streams.StreamPair { fatalError("implement this in your concrete subclass") }
+        func connect(timeout: TimeInterval) async throws -> Cornucopia.Streams.StreamPair { fatalError("implement this in your concrete subclass") }
         func cancel() {
             logger.debug("Cancel is NOT implemented in concrete connector subclass")
         }
