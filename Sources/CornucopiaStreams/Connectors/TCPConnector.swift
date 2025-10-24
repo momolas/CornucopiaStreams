@@ -82,19 +82,17 @@ extension Cornucopia.Streams {
                                 continuation.resume(returning: (inputStream, outputStream))
                             } else {
                                 self.pendingSocket = nil
-                                switch fd {
-                                    case -1:
+                                let errorCode = errno
+                                switch errorCode {
+                                    case EHOSTUNREACH:
                                         continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("\(host) not found"))
-                                    case -2:
-                                        continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("Can't connect via TCP to \(host):\(port) (select failed)"))
-                                    case -3:
+                                    case ETIMEDOUT:
                                         continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("Connection to \(host):\(port) timed out"))
-                                    case -4:
-                                        continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("Can't connect via TCP to \(host):\(port) (socket error)"))
-                                    case -5:
+                                    case ECANCELED:
                                         continuation.resume(throwing: Cornucopia.Streams.Error.connectionCancelled)
                                     default:
-                                        continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("Can't connect via TCP to \(host):\(port)"))
+                                        let errorMessage = String(cString: strerror(errorCode))
+                                        continuation.resume(throwing: Cornucopia.Streams.Error.unableToConnect("Can't connect via TCP to \(host):\(port): \(errorMessage)"))
                                 }
                             }
                         }

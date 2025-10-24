@@ -39,6 +39,7 @@ int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatil
     hp = gethostbyname(host);
     if (hp == NULL)
     {
+        errno = EHOSTUNREACH;
         return -1;
     }
 
@@ -66,7 +67,7 @@ int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatil
         {
             close(sockfd);
             errno = ECANCELED;
-            return -5;
+            return -1;
         }
 
         int waitDuration = 100;
@@ -85,7 +86,7 @@ int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatil
                 continue;
             }
             close(sockfd);
-            return -2;
+            return -1;
         }
         else if (retval == 0)
         {
@@ -97,7 +98,8 @@ int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatil
             if (remaining <= 0)
             {
                 close(sockfd);
-                return -3;
+                errno = ETIMEDOUT;
+                return -1;
             }
             continue;
         }
@@ -109,7 +111,8 @@ int csocket_connect(const char *host, int port, int timeoutMilliseconds, volatil
             if (error != 0)
             {
                 close(sockfd);
-                return -4;
+                errno = error;
+                return -1;
             }
             csocket_set_block(sockfd,1);
             signal(SIGPIPE, SIG_IGN);
