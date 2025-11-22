@@ -63,11 +63,12 @@ final class RFCOMMChannelInputStream: InputStream {
         self.dummySource = nil
     }
 
-#if DEBUG
     deinit {
+        self.CC_removeMeta()
+#if DEBUG
         print("\(self) destroyed")
-    }
 #endif
+    }
 }
 
 internal extension RFCOMMChannelInputStream {

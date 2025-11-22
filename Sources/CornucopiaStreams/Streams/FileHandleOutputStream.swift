@@ -65,6 +65,10 @@ final class FileHandleOutputStream: OutputStream {
     #endif
     override func schedule(in aRunLoop: RunLoop, forMode mode: RunLoop.Mode) { }
     override func remove(from aRunLoop: RunLoop, forMode mode: RunLoop.Mode) { }
+
+    deinit {
+        self.CC_removeMeta()
+    }
 }
 
 private extension FileHandleOutputStream {
