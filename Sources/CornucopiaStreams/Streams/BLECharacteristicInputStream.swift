@@ -11,7 +11,7 @@ import CoreBluetooth
 /// the connection would be teared down.
 final class BLECharacteristicInputStream: InputStream {
 
-    fileprivate var incoming: [UInt8] = []
+    fileprivate var incoming: Data = Data()
     public let characteristic: CBCharacteristic
     public let bridge: BLEBridge
 
@@ -55,18 +55,12 @@ final class BLECharacteristicInputStream: InputStream {
         let numberOfBytesToRead = min(self.incoming.count, len)
         guard numberOfBytesToRead > 0 else { return 0 }
 
-        _ = self.incoming.withUnsafeBufferPointer { pointer in
-            memcpy(buffer, pointer.baseAddress, numberOfBytesToRead)
+        self.incoming.copyBytes(to: buffer, count: numberOfBytesToRead)
+        if numberOfBytesToRead == self.incoming.count {
+            self.incoming.removeAll(keepingCapacity: false)
+        } else {
+            self.incoming.removeFirst(numberOfBytesToRead)
         }
-        self.incoming.removeFirst(numberOfBytesToRead)
-
-        /*
-        let range = 0..<numberOfBytesToRead
-        self.incoming.copyBytes(to: buffer, from: range)
-        _ = self.incoming.dropFirst(numberOfBytesToRead)
-        //self.incoming = self.incoming.subdata(in: numberOfBytesToRead..<self.incoming.count)
-        //self.incoming.removeFirst(numberOfBytesToRead) EXC_BREAKPOINT?
-        */
         return numberOfBytesToRead
     }
 
@@ -114,7 +108,7 @@ internal extension BLECharacteristicInputStream {
 
         let block = {
             guard let data = self.characteristic.value else { return }
-            self.incoming += data
+            self.incoming.append(data)
             self.reportDelegateEvent(.hasBytesAvailable)
         }
         // If the client did not schedule a ``RunLoop``, we just call it on the current calling context.
