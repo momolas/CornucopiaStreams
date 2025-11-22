@@ -175,6 +175,10 @@ final class FileHandleInputStream: InputStream {
 #endif
         self.CC_removeMeta()
     }
+
+    deinit {
+        self.CC_removeMeta()
+    }
 }
 
 private extension FileHandleInputStream {
