@@ -113,6 +113,10 @@ final class FileHandleInputStream: InputStream {
         aRunLoop.CC_removeSource(self.dummySource!)
         self.dummySource = nil
     }
+
+    deinit {
+        self.CC_removeMeta()
+    }
 }
 
 private extension FileHandleInputStream {

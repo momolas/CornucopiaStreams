@@ -52,9 +52,10 @@ final class TTYInputStreamProxy: ProxyInputStream {
         Foundation.close(fd)
     }
 
-#if DEBUG
     deinit {
+        self.CC_removeMeta()
+#if DEBUG
         print("\(self) destroyed")
-    }
 #endif
+    }
 }
