@@ -26,6 +26,8 @@ extension Cornucopia.Streams {
         var psm: CBL2CAPPSM? = nil
 
         var manager: CBCentralManager!
+        private let queue = DispatchQueue(label: "Cornucopia.Streams.BLEConnector", qos: .userInitiated)
+
         var peripherals: [UUID: CBPeripheral] = [:]
         var peripheral: CBPeripheral? = nil
 
@@ -55,9 +57,7 @@ extension Cornucopia.Streams {
             }
             return try await withCheckedThrowingContinuation { c in
                 self.continuation = c
-                //FIXME: This is using the main thread's queue to schedule the delegate calls on. Should we offload this to another global queue?
-                self.manager = CBCentralManager()
-                self.manager.delegate = self
+                self.manager = CBCentralManager(delegate: self, queue: self.queue)
             }
         }
 

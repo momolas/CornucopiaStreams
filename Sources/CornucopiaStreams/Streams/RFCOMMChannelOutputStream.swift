@@ -54,11 +54,12 @@ final class RFCOMMChannelOutputStream: OutputStream {
     public override func schedule(in aRunLoop: RunLoop, forMode mode: RunLoop.Mode) { self.runLoop = aRunLoop }
     public override func remove(from aRunLoop: RunLoop, forMode mode: RunLoop.Mode) { self.runLoop = nil }
 
-#if DEBUG
     deinit {
+        self.CC_removeMeta()
+#if DEBUG
         print("\(self) destroyed")
-    }
 #endif
+    }
 }
 
 internal extension RFCOMMChannelOutputStream {
