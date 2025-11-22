@@ -45,9 +45,11 @@ extension Cornucopia.Streams {
             if let flag = self.cancellationFlag {
                 flag.pointee = 1
             }
-            if let socket = self.pendingSocket {
-                _ = csocket_close(socket)
-                self.pendingSocket = nil
+            self.connectionQueue.sync {
+                if let socket = self.pendingSocket {
+                    _ = csocket_close(socket)
+                    self.pendingSocket = nil
+                }
             }
         }
 

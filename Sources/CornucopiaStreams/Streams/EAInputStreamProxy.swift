@@ -16,10 +16,11 @@ final class EAInputStreamProxy: ProxyInputStream {
         super.init(proxying: inputStream)
     }
 
-    #if DEBUG
     deinit {
+        self.CC_removeMeta()
+        #if DEBUG
         print("\(self) destroyed")
+        #endif
     }
-    #endif
 }
 #endif
