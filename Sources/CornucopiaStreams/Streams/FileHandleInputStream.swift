@@ -20,6 +20,8 @@ final class FileHandleInputStream: InputStream {
 #if canImport(Darwin)
     private var cfFileDescriptor: CFFileDescriptor? = nil
     private var runLoopSource: CFRunLoopSource? = nil
+#else
+    private var dispatchSource: DispatchSourceRead? = nil
 #endif
 
     private var _streamStatus: Stream.Status  = .notOpen {
@@ -82,18 +84,18 @@ final class FileHandleInputStream: InputStream {
         let source = CFFileDescriptorCreateRunLoopSource(kCFAllocatorDefault, cffd, 0)
         self.runLoopSource = source
 #else
-        //FIXME: This API does not integrate with the runloop system, but is rather a libdispatch.
-        _ = NotificationCenter.default.addObserver(forName: Notification.Name.NSFileHandleDataAvailable, object: self.fileHandle, queue: nil) { notification in
-            //FIXME: Hence we need to do a little runloop dance here
-            self.runLoop?.perform() {
+        let source = DispatchSource.makeReadSource(fileDescriptor: self.fileHandle.fileDescriptor, queue: DispatchQueue.global())
+        source.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            self.runLoop?.perform {
                 self._hasBytesAvailable = true
             }
-            CFRunLoopWakeUp(self.runLoop?.getCFRunLoop())
+            if let runLoop = self.runLoop {
+                CFRunLoopWakeUp(runLoop.getCFRunLoop())
+            }
         }
-        // Must be called from a thread that has an active runloop, see https://developer.apple.com/documentation/foundation/nsfilehandle/1409270-waitfordatainbackgroundandnotify
-        self.runLoop?.perform {
-            self.fileHandle.waitForDataInBackgroundAndNotify()
-        }
+        source.resume()
+        self.dispatchSource = source
 #endif
         self._streamStatus = .open
 #if !canImport(Darwin)
@@ -120,8 +122,6 @@ final class FileHandleInputStream: InputStream {
         if let cffd = self.cfFileDescriptor {
             CFFileDescriptorEnableCallBacks(cffd, kCFFileDescriptorReadCallBack)
         }
-#else
-        self.fileHandle.waitForDataInBackgroundAndNotify()
 #endif
         return nread
     }
@@ -133,6 +133,9 @@ final class FileHandleInputStream: InputStream {
             self.cfFileDescriptor = nil
         }
         self.runLoopSource = nil
+#else
+        self.dispatchSource?.cancel()
+        self.dispatchSource = nil
 #endif
         try? self.fileHandle.close()
         self._streamStatus = .closed
@@ -172,11 +175,9 @@ final class FileHandleInputStream: InputStream {
         if let cffd = self.cfFileDescriptor {
             CFFileDescriptorInvalidate(cffd)
         }
+#else
+        self.dispatchSource?.cancel()
 #endif
-        self.CC_removeMeta()
-    }
-
-    deinit {
         self.CC_removeMeta()
     }
 }
