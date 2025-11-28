@@ -16,6 +16,7 @@ extension Cornucopia.Streams {
     final class TCPConnector: BaseConnector {
 
         private let connectionQueue = DispatchQueue(label: "Cornucopia.Streams.TCPConnector", qos: .userInitiated)
+        private let lock = NSLock()
         private var cancellationFlag: UnsafeMutablePointer<sig_atomic_t>? = nil
         private var pendingSocket: Int32? = nil
 
@@ -45,6 +46,8 @@ extension Cornucopia.Streams {
             if let flag = self.cancellationFlag {
                 flag.pointee = 1
             }
+            self.lock.lock()
+            defer { self.lock.unlock() }
             if let socket = self.pendingSocket {
                 _ = csocket_close(socket)
                 self.pendingSocket = nil
@@ -73,15 +76,24 @@ extension Cornucopia.Streams {
                         host.withCString { cHost in
                             let fd = csocket_connect(cHost, Int32(port), timeoutMilliseconds, flagPointer)
                             if fd >= 0 {
+                                self.lock.lock()
                                 self.pendingSocket = fd
+                                self.lock.unlock()
+
                                 let inputHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
                                 let outputHandle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
                                 let inputStream = FileHandleInputStream(fileHandle: inputHandle)
                                 let outputStream = FileHandleOutputStream(fileHandle: outputHandle)
+
+                                self.lock.lock()
                                 self.pendingSocket = nil
+                                self.lock.unlock()
+
                                 continuation.resume(returning: (inputStream, outputStream))
                             } else {
+                                self.lock.lock()
                                 self.pendingSocket = nil
+                                self.lock.unlock()
                                 let errorCode = errno
                                 switch errorCode {
                                     case EHOSTUNREACH:
@@ -100,6 +112,8 @@ extension Cornucopia.Streams {
                 }
             }, onCancel: {
                 flagPointer.pointee = 1
+                self.lock.lock()
+                defer { self.lock.unlock() }
                 if let socket = self.pendingSocket {
                     _ = csocket_close(socket)
                     self.pendingSocket = nil

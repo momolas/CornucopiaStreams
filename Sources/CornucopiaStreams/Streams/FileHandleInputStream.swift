@@ -17,6 +17,12 @@ final class FileHandleInputStream: InputStream {
     private let fileHandle: FileHandle
     private weak var runLoop: RunLoop?
     private var dummySource: CFRunLoopSource? = nil
+#if canImport(Darwin)
+    private var cfFileDescriptor: CFFileDescriptor? = nil
+    private var runLoopSource: CFRunLoopSource? = nil
+#else
+    private var dispatchSource: DispatchSourceRead? = nil
+#endif
 
     private var _streamStatus: Stream.Status  = .notOpen {
         didSet {
@@ -58,20 +64,43 @@ final class FileHandleInputStream: InputStream {
     override func open() {
         guard self._streamStatus != .open else { return }
 
-        //FIXME: This API does not integrate with the runloop system, but is rather a libdispatch.
-        _ = NotificationCenter.default.addObserver(forName: Notification.Name.NSFileHandleDataAvailable, object: self.fileHandle, queue: nil) { notification in
-            //FIXME: Hence we need to do a little runloop dance here
-            self.runLoop?.perform() {
+#if canImport(Darwin)
+        let context = UnsafeMutablePointer<CFFileDescriptorContext>.allocate(capacity: 1)
+        context.initialize(to: CFFileDescriptorContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(), retain: nil, release: nil, copyDescription: nil))
+        defer { context.deallocate() }
+
+        let callback: CFFileDescriptorCallBack = { _, _, ctx in
+            guard let ctx = ctx else { return }
+            let stream = Unmanaged<FileHandleInputStream>.fromOpaque(ctx).takeUnretainedValue()
+            stream._hasBytesAvailable = true
+        }
+
+        guard let cffd = CFFileDescriptorCreate(kCFAllocatorDefault, self.fileHandle.fileDescriptor, false, callback, context) else {
+            self._streamError = NSError(domain: POSIXError.errorDomain, code: Int(errno), userInfo: nil)
+            self._streamStatus = .error
+            return
+        }
+        self.cfFileDescriptor = cffd
+        let source = CFFileDescriptorCreateRunLoopSource(kCFAllocatorDefault, cffd, 0)
+        self.runLoopSource = source
+#else
+        let source = DispatchSource.makeReadSource(fileDescriptor: self.fileHandle.fileDescriptor, queue: DispatchQueue.global())
+        source.setEventHandler { [weak self] in
+            guard let self = self else { return }
+            self.runLoop?.perform {
                 self._hasBytesAvailable = true
             }
-            CFRunLoopWakeUp(self.runLoop?.getCFRunLoop())
+            if let runLoop = self.runLoop {
+                CFRunLoopWakeUp(runLoop.getCFRunLoop())
+            }
         }
-        // Must be called from a thread that has an active runloop, see https://developer.apple.com/documentation/foundation/nsfilehandle/1409270-waitfordatainbackgroundandnotify
-        self.runLoop?.perform {
-            self.fileHandle.waitForDataInBackgroundAndNotify()
-        }
+        source.resume()
+        self.dispatchSource = source
+#endif
         self._streamStatus = .open
+#if !canImport(Darwin)
         CFRunLoopWakeUp(self.runLoop?.getCFRunLoop())
+#endif
     }
 
     override var hasBytesAvailable: Bool { self._hasBytesAvailable }
@@ -89,11 +118,25 @@ final class FileHandleInputStream: InputStream {
             return 0
         }
         self._hasBytesAvailable = false
-        self.fileHandle.waitForDataInBackgroundAndNotify()
+#if canImport(Darwin)
+        if let cffd = self.cfFileDescriptor {
+            CFFileDescriptorEnableCallBacks(cffd, kCFFileDescriptorReadCallBack)
+        }
+#endif
         return nread
     }
 
     override func close() {
+#if canImport(Darwin)
+        if let cffd = self.cfFileDescriptor {
+            CFFileDescriptorInvalidate(cffd)
+            self.cfFileDescriptor = nil
+        }
+        self.runLoopSource = nil
+#else
+        self.dispatchSource?.cancel()
+        self.dispatchSource = nil
+#endif
         try? self.fileHandle.close()
         self._streamStatus = .closed
     }
@@ -107,11 +150,35 @@ final class FileHandleInputStream: InputStream {
         self.dummySource = CFRunLoopSource.CC_dummy()
         aRunLoop.CC_addSource(self.dummySource!)
         self.runLoop = aRunLoop
+#if canImport(Darwin)
+        if let source = self.runLoopSource {
+            CFRunLoopAddSource(aRunLoop.getCFRunLoop(), source, mode.rawValue as CFString)
+            if let cffd = self.cfFileDescriptor {
+                CFFileDescriptorEnableCallBacks(cffd, kCFFileDescriptorReadCallBack)
+            }
+        }
+#endif
     }
     public override func remove(from aRunLoop: RunLoop, forMode mode: RunLoop.Mode) {
         self.runLoop = nil
         aRunLoop.CC_removeSource(self.dummySource!)
         self.dummySource = nil
+#if canImport(Darwin)
+        if let source = self.runLoopSource {
+            CFRunLoopRemoveSource(aRunLoop.getCFRunLoop(), source, mode.rawValue as CFString)
+        }
+#endif
+    }
+
+    deinit {
+#if canImport(Darwin)
+        if let cffd = self.cfFileDescriptor {
+            CFFileDescriptorInvalidate(cffd)
+        }
+#else
+        self.dispatchSource?.cancel()
+#endif
+        self.CC_removeMeta()
     }
 }
 

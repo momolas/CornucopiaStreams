@@ -12,8 +12,8 @@ public final class BLEBridge: NSObject {
 
     let service: CBService?
     let channel: CBL2CAPChannel? = nil
-    weak var inputStream: BLECharacteristicInputStream!
-    weak var outputStream: BLECharacteristicOutputStream!
+    weak var inputStream: BLECharacteristicInputStream?
+    weak var outputStream: BLECharacteristicOutputStream?
 
     public let peripheral: CBPeripheral
     public let manager: CBCentralManager
@@ -37,8 +37,11 @@ public final class BLEBridge: NSObject {
 extension BLEBridge: CBPeripheralDelegate {
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic == self.inputStream.characteristic else { fatalError() }
-        defer { self.inputStream.bleSubscriptionCompleted(error: error) }
+        guard characteristic == self.inputStream?.characteristic else {
+            logger.error("Received didUpdateNotificationStateForCharacteristic for unknown characteristic \(characteristic)")
+            return
+        }
+        defer { self.inputStream?.bleSubscriptionCompleted(error: error) }
         guard error == nil else {
             logger.debug("Could not updateNotificationStateForCharacteristic: \(error!)")
             return
@@ -47,18 +50,24 @@ extension BLEBridge: CBPeripheralDelegate {
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic == self.outputStream.characteristic else { fatalError() }
+        guard characteristic == self.outputStream?.characteristic else {
+            logger.error("Received didWriteValueForCharacteristic for unknown characteristic \(characteristic)")
+            return
+        }
         guard error == nil else {
             logger.debug("Could not writeValueForCharacteristic: \(error!)")
             return
         }
         logger.trace("didWriteValueForCharacteristic: \(characteristic)")
-        self.outputStream.bleWriteCompleted()
+        self.outputStream?.bleWriteCompleted()
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic == self.inputStream.characteristic else { fatalError() }
-        defer { self.inputStream.bleReadCompleted(error: error) }
+        guard characteristic == self.inputStream?.characteristic else {
+            logger.error("Received didUpdateValueForCharacteristic for unknown characteristic \(characteristic)")
+            return
+        }
+        defer { self.inputStream?.bleReadCompleted(error: error) }
         guard error == nil else {
             logger.debug("Could not updateValueForCharacteristic: \(error!)")
             return
@@ -67,9 +76,12 @@ extension BLEBridge: CBPeripheralDelegate {
     }
 
     public func peripheralIsReady(toSendWriteWithoutResponse peripheral: CBPeripheral) {
-        guard peripheral == self.peripheral else { fatalError() }
+        guard peripheral == self.peripheral else {
+            logger.error("Received periperalIsReadyToSendWriteWithoutResponse for unknown peripheral \(peripheral)")
+            return
+        }
         logger.trace("periperalIsReadyToSendWriteWithoutResponse: \(peripheral)")
-        self.outputStream.bleReadyToWriteWithoutResponse()
+        self.outputStream?.bleReadyToWriteWithoutResponse()
     }
 }
 #endif

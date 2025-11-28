@@ -14,8 +14,8 @@ public final class RFCOMMBridge: NSObject {
     let channelID: BluetoothRFCOMMChannelID
     var channel: IOBluetoothRFCOMMChannel? = nil
 
-    weak var inputStream: RFCOMMChannelInputStream!
-    weak var outputStream: RFCOMMChannelOutputStream!
+    weak var inputStream: RFCOMMChannelInputStream?
+    weak var outputStream: RFCOMMChannelOutputStream?
 
     /// Create the stream pair for the first applicable `CBCharacteristic` in the specified `CBService`.
     public init(forDevice device: IOBluetoothDevice, channelID: BluetoothRFCOMMChannelID) {
@@ -27,7 +27,7 @@ public final class RFCOMMBridge: NSObject {
     func openChannel() {
         let result = self.device.openRFCOMMChannelAsync(&channel, withChannelID: self.channelID, delegate: self)
         if result != kIOReturnSuccess {
-            inputStream.rfcommChannelOpenComplete(result: result)
+            inputStream?.rfcommChannelOpenComplete(result: result)
         }
     }
 
@@ -62,16 +62,16 @@ extension RFCOMMBridge: IOBluetoothRFCOMMChannelDelegate {
 
     public func rfcommChannelData(_ rfcommChannel: IOBluetoothRFCOMMChannel!, data dataPointer: UnsafeMutableRawPointer!, length dataLength: Int) {
         let data = Data(bytes: dataPointer, count: dataLength)
-        self.inputStream.rfcommChannelIncomingData(data)
+        self.inputStream?.rfcommChannelIncomingData(data)
     }
 
     public func rfcommChannelOpenComplete(_ rfcommChannel: IOBluetoothRFCOMMChannel!, status error: IOReturn) {
-        self.inputStream.rfcommChannelOpenComplete(result: error)
+        self.inputStream?.rfcommChannelOpenComplete(result: error)
     }
 
     public func rfcommChannelClosed(_ rfcommChannel: IOBluetoothRFCOMMChannel!) {
-        self.inputStream.rfcommChannelClosed()
-        self.outputStream.rfcommChannelClosed()
+        self.inputStream?.rfcommChannelClosed()
+        self.outputStream?.rfcommChannelClosed()
     }
 
     public func rfcommChannelControlSignalsChanged(_ rfcommChannel: IOBluetoothRFCOMMChannel!) {

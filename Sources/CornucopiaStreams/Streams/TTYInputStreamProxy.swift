@@ -29,19 +29,34 @@ final class TTYInputStreamProxy: ProxyInputStream {
         }
         // macOS resets the baudrate when the filedescriptor closes, hence we need to carry it around until the connection ends.
         self.fd = fd
+
+        #if canImport(Darwin)
+        // On Darwin, we can use ioctl with IOSSIOSPEED to set the baud rate directly and immediately.
+        // IOSSIOSPEED is _IOW('T', 2, speed_t)
+        // 'T' is 0x54. 2 is 2. speed_t is usually unsigned long (8 bytes on 64-bit).
+        // The value calculation depends on architecture, but typically:
+        // _IOC(inout, group, num, len)
+        // _IOC_IN | _IOC_OUT = 0x80000000 (for _IOW? Wait, IOW is usually IN for ioctl writing TO kernel?)
+        // Actually, let's stick to standard termios but without the weird sleep loop, verifying errors instead.
+        // However, ioctl is preferred. Let's try to be standard first.
+        #endif
+
         var settings = termios()
-        _ = tcgetattr(fd, &settings)
-        var retry = 3
-        // Do the bitrate dance.
-        while retry > 0 && !(settings.c_ispeed == bitrate && settings.c_ospeed == bitrate) {
-            _ = cfsetspeed(&settings, speed_t(bitrate))
-            _ = tcsetattr(fd, TCSAFLUSH, &settings)
-            usleep(100000)
-            _ = tcsetattr(fd, TCSANOW, &settings)
-            _ = cfsetspeed(&settings, speed_t(bitrate))
-            _ = tcgetattr(fd, &settings)
-            retry -= 1
+        if tcgetattr(fd, &settings) != 0 {
+            #if DEBUG
+            print("tcgetattr failed: \(String(cString: strerror(errno)))")
+            #endif
         }
+
+        cfsetspeed(&settings, speed_t(bitrate))
+
+        // TCSAFLUSH drains output and flushes input.
+        if tcsetattr(fd, TCSAFLUSH, &settings) != 0 {
+            #if DEBUG
+            print("tcsetattr failed: \(String(cString: strerror(errno)))")
+            #endif
+        }
+
         super.open()
     }
 
@@ -52,9 +67,10 @@ final class TTYInputStreamProxy: ProxyInputStream {
         Foundation.close(fd)
     }
 
-#if DEBUG
     deinit {
+        self.CC_removeMeta()
+#if DEBUG
         print("\(self) destroyed")
-    }
 #endif
+    }
 }
